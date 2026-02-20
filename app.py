@@ -53,9 +53,9 @@ def display_pdf(uploaded_file):
     pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="400" type="application/pdf"></iframe>'
     st.markdown(pdf_display, unsafe_allow_html=True)
 
-# --- GEMINI PDF FELDOLGOZÓ FÜGGVÉNY (AUTOMATIKUS MODELLVÁLASZTÁSSAL) ---
+# --- GEMINI PDF FELDOLGOZÓ FÜGGVÉNY (AUTOMATIKUS MODELLVÁLASZTÁSSAL ÉS HIBAKERESÉSSEL) ---
 def process_pdf_with_gemini(uploaded_file):
-    # Modellek listája: Ha a Pro nem elérhető, azonnal ugrik a gyors és stabil Flash-re
+    # Modellek listája: Ha a Pro nem elérhető, ugrik a gyors és stabil Flash-re
     models_to_try = ['gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-1.5-pro-latest']
     
     prompt = """
@@ -88,13 +88,13 @@ def process_pdf_with_gemini(uploaded_file):
             st.toast(f"✅ AI Modell kapcsolódva: {model_name}")
             return data
             
-       except Exception as e:
-            # Írjuk ki a felületre a pontos Google hibaüzenetet!
-            st.warning(f"⚠️ Hiba a {model_name} modellel: {e}")
-            continue
+        except Exception as e:
+            # Írjuk ki a felületre a pontos Google hibaüzenetet sárga dobozban!
+            st.warning(f"⚠️ Hiba a(z) {model_name} modellel: {e}")
+            continue 
 
     # Ha egyik sem működött:
-    st.error("❌ Egyik AI modellel sem sikerült kapcsolódni a szerverhez. Ellenőrizd az API kulcsot!")
+    st.error("❌ Egyik AI modellel sem sikerült kapcsolódni a szerverhez. Ellenőrizd a fenti sárga hibaüzeneteket!")
     return None
 
 # --- STREAMLIT FELÜLET (USER INTERFACE) ---
@@ -158,4 +158,3 @@ if not df_admin.empty:
     )
 else:
     st.info("Az adatbázis jelenleg üres. Tölts fel egy PDF forgalmit a kezdéshez!")
-
