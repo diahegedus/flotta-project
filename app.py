@@ -5,7 +5,36 @@ import json
 import os
 import base64
 import io
+# --- JELSZÓ ELLENŐRZŐ FÜGGVÉNY ---
+def check_password():
+    """Visszatérési értéke True, ha a felhasználó helyes jelszót adott meg."""
 
+    def password_entered():
+        """Ellenőrzi, hogy a megadott jelszó egyezik-e a tárolttal."""
+        if (
+            st.session_state["username"] == st.secrets["credentials"]["username"]
+            and st.session_state["password"] == st.secrets["credentials"]["password"]
+        ):
+            st.session_state["password_correct"] = True
+            del st.session_state["password"]  # Töröljük a jelszót a memóriából
+            del st.session_state["username"]
+        else:
+            st.session_state["password_correct"] = False
+
+    if "password_correct" not in st.session_state:
+        # Első futtatás, kérjük be az adatokat
+        st.text_input("Felhasználónév", on_change=password_entered, key="username")
+        st.text_input("Jelszó", type="password", on_change=password_entered, key="password")
+        return False
+    elif not st.session_state["password_correct"]:
+        # Rossz jelszó
+        st.text_input("Felhasználónév", on_change=password_entered, key="username")
+        st.text_input("Jelszó", type="password", on_change=password_entered, key="password")
+        st.error("😕 Hibás felhasználónév vagy jelszó")
+        return False
+    else:
+        # Minden rendben
+        return True
 # --- BEÁLLÍTÁSOK ÉS BIZTONSÁG ---
 try:
     api_key = st.secrets["GEMINI_API_KEY"]
@@ -173,3 +202,4 @@ if not df_admin.empty:
     )
 else:
     st.info("Az adatbázis jelenleg üres. Tölts fel egy PDF forgalmit a kezdéshez!")
+
