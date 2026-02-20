@@ -11,13 +11,11 @@ try:
     api_key = st.secrets["GEMINI_API_KEY"]
     genai.configure(api_key=api_key)
 except KeyError:
-    st.error("❌ Hiba: Nem található a GEMINI_API_KEY a secrets beállításokban! Kérlek, ellenőrizd a .streamlit/secrets.toml fájlt vagy a felhős beállításokat.")
+    st.error("❌ Hiba: Nem található a GEMINI_API_KEY a secrets beállításokban!")
     st.stop()
 
-# A lokális teszt adatbázis fájlja
 DB_FILE = "forgalmi_adatbazis.csv" 
 
-# --- ADATBÁZIS KEZELŐ FÜGGVÉNYEK ---
 def load_data():
     if os.path.exists(DB_FILE):
         return pd.read_csv(DB_FILE)
@@ -30,39 +28,52 @@ def save_data(df):
 def upsert_record(new_data_dict):
     df = load_data()
     alvaz = new_data_dict.get("Alvazszam")
-    
     if alvaz:
         if alvaz in df["Alvazszam"].values:
             idx = df.index[df['Alvazszam'] == alvaz][0]
             for key, value in new_data_dict.items():
                 if value: 
                     df.at[idx, key] = value
-            st.info(f"🔄 Meglévő jármű frissítve (Upsert): {alvaz}")
+            st.info(f"🔄 Meglévő jármű frissítve: {alvaz}")
         else:
             new_row = pd.DataFrame([new_data_dict])
             df = pd.concat([df, new_row], ignore_index=True)
             st.success(f"✅ Új jármű rögzítve: {alvaz}")
-        
         save_data(df)
     else:
-        st.error("❌ Nem sikerült alvázszámot azonosítani a PDF-ből, a mentés megszakadt.")
+        st.error("❌ Nem sikerült alvázszámot azonosítani a PDF-ből.")
 
-# --- PDF MEGJELENÍTŐ FÜGGVÉNY ---
 def display_pdf(uploaded_file):
     base64_pdf = base64.b64encode(uploaded_file.getvalue()).decode('utf-8')
     pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="400" type="application/pdf"></iframe>'
     st.markdown(pdf_display, unsafe_allow_html=True)
 
-# --- GEMINI PDF FELDOLGOZÓ FÜGGVÉNY (AUTOMATIKUS MODELLVÁLASZTÁSSAL ÉS HIBAKERESÉSSEL) ---
 def process_pdf_with_gemini(uploaded_file):
-    # Modellek listája: Ha a Pro nem elérhető, ugrik a gyors és stabil Flash-re
-    models_to_try = ['gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-1.5-pro-latest']
+    # 1. OKOS MODELLVÁLASZTÁS: Megkérdezzük a Google-t, hogy mik az engedélyezett modellek
+    try:
+        available_models = [m.name.replace('models/', '') for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+    except Exception as e:
+        st.error(f"❌ API Kulcs hiba: Nem sikerült lekérdezni az elérhető modelleket. Részletek: {e}")
+        return None
+        
+    if not available_models:
+        st.error("❌ A Google egyetlen modellt sem engedélyez ehhez az API kulcshoz.")
+        return None
+
+    # 2. Prioritási sorrend felállítása (a legjobbtól a legrégebbi felé)
+    preferred_order = ['gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-1.5-pro-latest', 'gemini-1.0-pro', 'gemini-pro']
     
+    # Kiválogatjuk azokat, amik tényleg benne vannak a Te engedélyezett listádban
+    models_to_try = [m for m in preferred_order if m in available_models]
+    
+    # Ha a preferáltak közül egyik sincs, próbáljuk meg azt, amit a Google legelsőként felkínál
+    if not models_to_try:
+        models_to_try = [available_models[0]]
+
     prompt = """
     Te egy profi flotta adminisztrációs adatkinyerő rendszer vagy. 
     Vizsgáld meg a csatolt PDF dokumentumot, ami egy magyar forgalmi engedély.
     Keresd meg rajta a rendszámot és az alvázszámot.
-    
     Pontosan az alábbi JSON formátumban válaszolj (markdown formázás és egyéb szöveg nélkül, csak a nyers JSON):
     {
         "Alvazszam": "ide jön a 17 karakteres alvázszám, ha van",
@@ -76,7 +87,7 @@ def process_pdf_with_gemini(uploaded_file):
         "data": uploaded_file.getvalue()
     }
     
-    # Végigpróbáljuk a modelleket, amíg valamelyik nem ad sikeres választ
+    # 3. Próbálkozás a dinamikusan kiválasztott modellekkel
     for model_name in models_to_try:
         try:
             model = genai.GenerativeModel(model_name)
@@ -84,23 +95,32 @@ def process_pdf_with_gemini(uploaded_file):
             clean_text = response.text.replace('```json', '').replace('```', '').strip()
             data = json.loads(clean_text)
             
-            # Apró visszajelzés a sarokban, hogy melyik modellt használta a rendszer
-            st.toast(f"✅ AI Modell kapcsolódva: {model_name}")
+            st.toast(f"✅ AI Modell sikeresen használva: {model_name}")
             return data
             
         except Exception as e:
-            # Írjuk ki a felületre a pontos Google hibaüzenetet sárga dobozban!
             st.warning(f"⚠️ Hiba a(z) {model_name} modellel: {e}")
             continue 
 
-    # Ha egyik sem működött:
-    st.error("❌ Egyik AI modellel sem sikerült kapcsolódni a szerverhez. Ellenőrizd a fenti sárga hibaüzeneteket!")
+    st.error("❌ Egyik engedélyezett AI modellel sem sikerült a feldolgozás.")
     return None
 
-# --- STREAMLIT FELÜLET (USER INTERFACE) ---
+# --- STREAMLIT FELÜLET ---
 st.set_page_config(page_title="Forgalmi PDF Feldolgozó Pilot", layout="centered")
 
 st.title("📄 Forgalmi Engedély PDF Feldolgozó")
+
+# --- ÚJ DIAGNOSZTIKA SZEKCIÓ ---
+with st.expander("🛠️ Rendszer Diagnosztika (Kattints ide a hibakereséshez)"):
+    st.write("Ezen a panelen ellenőrizheted, hogy a Google milyen AI modelleket engedélyezett a te konkrét API kulcsodhoz.")
+    if st.button("Lekérdezés indítása"):
+        try:
+            models = [m.name for m in genai.list_models()]
+            st.success("✅ A kulcs működik! A Google az alábbi modelleket engedélyezi számodra:")
+            st.json(models)
+        except Exception as e:
+            st.error(f"❌ Hiba a lekérdezés során: {e}")
+
 st.markdown("Húzz be egy forgalmi engedélyt tartalmazó PDF-et. A rendszer kinyeri az adatokat és azonnal exportálható Excel fájlt készít belőle.")
 
 uploaded_file = st.file_uploader("Forgalmi engedély feltöltése (PDF)", type=['pdf'])
@@ -118,7 +138,6 @@ if uploaded_file is not None:
                 df_result = pd.DataFrame([extracted_data])
                 st.dataframe(df_result, use_container_width=True, hide_index=True)
                 
-                # Egyedi Excel fájl generálása a memóriában
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine='openpyxl') as writer:
                     df_result.to_excel(writer, index=False, sheet_name='Kinyert_Adatok')
@@ -130,20 +149,16 @@ if uploaded_file is not None:
                     file_name=f"kinyert_adat_{extracted_data.get('Rendszam', 'ismeretlen')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
-                
-                # Mentés az adatbázisba
                 upsert_record(extracted_data)
 
 st.divider()
 
-# --- ADMIN NÉZET / EREDMÉNYEK MEGJELENÍTÉSE ---
 st.subheader("📊 Teljes Flotta Adatbázis (Puffer / SharePoint Szimuláció)")
 df_admin = load_data()
 
 if not df_admin.empty:
     st.dataframe(df_admin, use_container_width=True, hide_index=True)
     
-    # Teljes adatbázis Excel export generálása
     db_output = io.BytesIO()
     with pd.ExcelWriter(db_output, engine='openpyxl') as writer:
         df_admin.to_excel(writer, index=False, sheet_name='Flotta_Adatbazis')
