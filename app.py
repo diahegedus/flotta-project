@@ -105,7 +105,7 @@ if check_password():
             return None
 
     # --- FELÜLET ---
-    st.title("📄 Profi Flotta Adatkinyerő")
+    st.title("📄 Flotta Adatkinyerő")
     
     with st.sidebar:
         st.write(f"👤 Felhasználó: {st.secrets['credentials']['username']}")
@@ -144,3 +144,4 @@ if check_password():
         )
     else:
         st.info("Nincs rögzített adat.")
+
