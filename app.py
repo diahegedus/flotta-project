@@ -88,10 +88,10 @@ def process_pdf_with_gemini(uploaded_file):
             st.toast(f"✅ AI Modell kapcsolódva: {model_name}")
             return data
             
-        except Exception as e:
-            # Ha hiba van a modellel, csendben lép a következőre
-            print(f"Hiba a {model_name} modellel: {e}")
-            continue 
+       except Exception as e:
+            # Írjuk ki a felületre a pontos Google hibaüzenetet!
+            st.warning(f"⚠️ Hiba a {model_name} modellel: {e}")
+            continue
 
     # Ha egyik sem működött:
     st.error("❌ Egyik AI modellel sem sikerült kapcsolódni a szerverhez. Ellenőrizd az API kulcsot!")
@@ -158,3 +158,4 @@ if not df_admin.empty:
     )
 else:
     st.info("Az adatbázis jelenleg üres. Tölts fel egy PDF forgalmit a kezdéshez!")
+
